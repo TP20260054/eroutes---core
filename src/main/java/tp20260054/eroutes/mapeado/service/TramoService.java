@@ -46,7 +46,7 @@ public class TramoService {
 		return new TramoDetalleDto(tramo.getId(), tramo.getOsmWayId(), tramo.getNodoOrigen(),
 				tramo.getNodoDestino(), tramo.getTipoVia(), tramo.getLongitudM(),
 				tramo.getVelocidadMax(), tramo.isEsCiclovia(), tramo.isValidado(),
-				tramo.isSentidoUnico(), coordenadas(tramo));
+				tramo.isSentidoUnico(), coordenadas(tramo), tramo.getNombre());
 	}
 
 	@Transactional(readOnly = true)
@@ -67,7 +67,8 @@ public class TramoService {
 
 	private TramoDto toDto(Tramo tramo) {
 		return new TramoDto(tramo.getId(), tramo.getTipoVia(), tramo.getLongitudM(),
-				tramo.isEsCiclovia(), tramo.isValidado(), coordenadas(tramo), tramo.isSentidoUnico());
+				tramo.isEsCiclovia(), tramo.isValidado(), coordenadas(tramo), tramo.isSentidoUnico(),
+				tramo.getNombre());
 	}
 
 	private List<Coordenada> coordenadas(Tramo tramo) {

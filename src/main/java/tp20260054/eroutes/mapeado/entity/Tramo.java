@@ -49,4 +49,10 @@ public class Tramo {
 
 	@Column(name = "sentido_unico", nullable = false)
 	private boolean sentidoUnico;
+
+	@Column(name = "nombre")
+	private String nombre;
+
+	@Column(name = "nombre_norm")
+	private String nombreNorm;
 }

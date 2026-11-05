@@ -6,11 +6,17 @@ Uso (desde la raíz del backend, donde está .env.local):
 import argparse
 import os
 import re
+import sys
+from pathlib import Path
 
 import osmnx as ox
 import psycopg2
 from dotenv import load_dotenv
 from psycopg2.extras import execute_values
+
+# Permite importar normalizar.py desde la misma carpeta data/
+sys.path.insert(0, str(Path(__file__).parent))
+from normalizar import normalizar  # noqa: E402
 
 CICLO_TAGS = ["cycleway", "cycleway:left", "cycleway:right", "cycleway:both"]
 DEDICADA = {"lane", "track", "separate", "opposite_lane", "opposite_track"}
@@ -73,6 +79,8 @@ def main():
             r["geometry"].wkt, float(r["length"]),
             first(r.get("highway")), parse_speed(r.get("maxspeed")),
             es_ciclovia(r), is_true(r.get("oneway")),
+            first(r.get("name")),              # nombre (primer valor si lista)
+            normalizar(first(r.get("name"))),  # nombre_norm
         )
         for r in edges.to_dict("records")
     ]
@@ -88,10 +96,13 @@ def main():
             cur,
             """INSERT INTO tramos (osm_way_id, nodo_origen, nodo_destino, geom,
                                    longitud_m, tipo_via, velocidad_max,
-                                   es_ciclovia, sentido_unico) VALUES %s""",
+                                   es_ciclovia, sentido_unico,
+                                   nombre, nombre_norm) VALUES %s""",
             tramo_rows,
-            template="(%s, %s, %s, ST_GeomFromText(%s, 4326), %s, %s, %s, %s, %s)",
+            template="(%s, %s, %s, ST_GeomFromText(%s, 4326), %s, %s, %s, %s, %s, %s, %s)",
             page_size=1000)
+        print("Refrescando vista materializada calles...")
+        cur.execute("REFRESH MATERIALIZED VIEW calles")
     print("Carga completa.")
 
 
