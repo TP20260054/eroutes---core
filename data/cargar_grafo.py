@@ -72,7 +72,11 @@ def main():
     edges = edges.reset_index()  # columnas u, v, key
     print(f"{len(nodes)} nodos, {len(edges)} tramos")
 
-    nodo_rows = [(int(osmid), g.wkt) for osmid, g in zip(nodes.index, nodes.geometry)]
+    # Nodos: incluir columna 'highway' como control (señales de tráfico, stops, cruces, etc.)
+    nodo_rows = [
+        (int(osmid), g.wkt, first(row.get("highway")))
+        for osmid, g, row in zip(nodes.index, nodes.geometry, nodes.to_dict("records"))
+    ]
     tramo_rows = [
         (
             int(first(r.get("osmid"))), int(r["u"]), int(r["v"]),
@@ -90,8 +94,8 @@ def main():
             cur.execute("TRUNCATE tramos, nodos RESTART IDENTITY")
         execute_values(
             cur,
-            "INSERT INTO nodos (id, geom) VALUES %s ON CONFLICT (id) DO NOTHING",
-            nodo_rows, template="(%s, ST_GeomFromText(%s, 4326))", page_size=1000)
+            "INSERT INTO nodos (id, geom, control) VALUES %s ON CONFLICT (id) DO NOTHING",
+            nodo_rows, template="(%s, ST_GeomFromText(%s, 4326), %s)", page_size=1000)
         execute_values(
             cur,
             """INSERT INTO tramos (osm_way_id, nodo_origen, nodo_destino, geom,

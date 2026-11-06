@@ -19,4 +19,7 @@ public class Nodo {
 
 	@Column(columnDefinition = "geometry(Point,4326)", nullable = false)
 	private Point geom;
+
+	@Column(name = "control")
+	private String control;
 }
