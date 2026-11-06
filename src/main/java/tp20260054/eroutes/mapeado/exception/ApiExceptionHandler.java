@@ -8,6 +8,10 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import tp20260054.eroutes.routing.service.GrafoNoDisponibleException;
+import tp20260054.eroutes.routing.service.MismoNodoException;
+import tp20260054.eroutes.routing.service.PuntoFueraDeCoberturaException;
+import tp20260054.eroutes.routing.service.SinCaminoException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -31,6 +35,22 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(RecursoNoEncontradoException.class)
 	ProblemDetail notFound(RecursoNoEncontradoException exception) {
 		return problem(HttpStatus.NOT_FOUND, "Recurso no encontrado", exception.getMessage());
+	}
+
+	@ExceptionHandler(SinCaminoException.class)
+	ProblemDetail sinCamino(SinCaminoException exception) {
+		return problem(HttpStatus.NOT_FOUND, "Sin camino disponible", exception.getMessage());
+	}
+
+	@ExceptionHandler({PuntoFueraDeCoberturaException.class, MismoNodoException.class})
+	ProblemDetail fueraDeCobertura(RuntimeException exception) {
+		return problem(HttpStatus.UNPROCESSABLE_ENTITY, "Punto fuera de la zona cubierta",
+				exception.getMessage());
+	}
+
+	@ExceptionHandler(GrafoNoDisponibleException.class)
+	ProblemDetail grafoNoDisponible(GrafoNoDisponibleException exception) {
+		return problem(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no disponible", exception.getMessage());
 	}
 
 	@ExceptionHandler(Exception.class)
