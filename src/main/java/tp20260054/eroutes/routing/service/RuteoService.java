@@ -133,14 +133,16 @@ public class RuteoService {
         // Métricas
         double distanciaTotal = aristas.stream().mapToDouble(Arista::longitudM).sum();
 
-        // Tiempo estimado con velEfectiva del multicriterio
-        double tiempoSeg = aristas.stream()
-                .mapToDouble(a -> {
-                    double vel = costoMulticriterio.velEfectiva(a);
-                    double velUsada = Math.min(vel, perfil.velocidadMaximaKmh());
-                    return a.longitudM() / (velUsada / 3.6);
-                })
-                .sum();
+        // Tiempo estimado con la misma fórmula que CostoMulticriterio/CostoTiempo
+        // El último nodo (destino final) NO suma demora
+        double tiempoSeg = 0.0;
+        for (int i = 0; i < aristas.size(); i++) {
+            Arista a = aristas.get(i);
+            boolean esUltimo = (i == aristas.size() - 1);
+            var destinoInfo = grafo.nodo(a.destino());
+            tiempoSeg += costoMulticriterio.tiempoAristaS(
+                    a, destinoInfo, perfil.velocidadMaximaKmh(), esUltimo);
+        }
 
         // Exposición promedio ponderada por longitud
         double sumaExpoLong = 0, sumaLong = 0;

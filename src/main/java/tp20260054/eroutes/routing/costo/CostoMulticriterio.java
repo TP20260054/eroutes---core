@@ -4,12 +4,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import tp20260054.eroutes.routing.dto.PesosDto;
 import tp20260054.eroutes.routing.graph.Arista;
+import tp20260054.eroutes.routing.graph.NodoInfo;
 
 /**
  * Función de costo multicriterio.
  * Combina tiempo, distancia, exposición, penalización por no validado y riesgo de cruce.
  *
- * <p>Todos los parámetros de la tabla son PROVISIONALES y configurables.
+ * <p>Todos los parámetros son PROVISIONALES y configurables.
  */
 @Component("MULTICRITERIO")
 @RequiredArgsConstructor
@@ -37,16 +38,60 @@ public class CostoMulticriterio implements FuncionCosto {
         return (arista, ctx) -> calcular(arista, ctx, efectivos);
     }
 
+    // -------------------------------------------------------------------------
+    // Tiempo: fórmula compartida con CostoTiempo y RuteoService
+    // -------------------------------------------------------------------------
+
+    /**
+     * Tiempo de recorrido de la arista en segundos, incluyendo la demora
+     * al llegar al nodo destino.
+     *
+     * <p>Si {@code esDestinoFinal} es true, NO se suma la demora del nodo
+     * (el último nodo de la ruta no genera espera).
+     *
+     * @param a               arista
+     * @param destinoInfo     información del nodo destino (puede ser null)
+     * @param velVehiculoKmh  velocidad máxima del vehículo en km/h
+     * @param esDestinoFinal  true si este es el último nodo de la ruta
+     */
+    public double tiempoAristaS(Arista a, NodoInfo destinoInfo,
+                                double velVehiculoKmh, boolean esDestinoFinal) {
+        double factor = props.factorVelocidadEfectiva();
+        double velVia = velEfectiva(a);
+        double velUsada = factor * Math.min(velVia, velVehiculoKmh);
+        double tiempoRodadura = a.longitudM() / (velUsada / 3.6);
+
+        double demora = 0.0;
+        if (!esDestinoFinal && destinoInfo != null) {
+            demora = demoraNodeS(destinoInfo);
+        }
+        return tiempoRodadura + demora;
+    }
+
+    /** Demora en segundos al llegar a un nodo según su control y grado. */
+    public double demoraNodeS(NodoInfo nodo) {
+        CostoProperties.DemoraNode d = props.demoraNodo();
+        if (nodo == null) return 0.0;
+        String ctrl = nodo.control();
+        if ("traffic_signals".equals(ctrl)) return d.trafficSignals();
+        if ("stop".equals(ctrl))            return d.stop();
+        if ("crossing".equals(ctrl))        return d.crossing();
+        // Nodo sin control pero con grado >= 3: demora mínima
+        if (nodo.riesgoCruce() > 0.0)       return d.sinControl();
+        return 0.0;
+    }
+
+    // -------------------------------------------------------------------------
+
     private double calcular(Arista a, ContextoNodo destino, CostoProperties.Pesos w) {
         double dist = a.longitudM();
 
-        // --- Tiempo ---
-        double velVia = velEfectiva(a);
-        double velVehiculo = 45.0; // km/h del perfil; la función no depende del perfil directamente
-        double velUsada = Math.min(velVia, velVehiculo);
-        double tiempoSeg = dist / (velUsada / 3.6);
+        // Tiempo usando la fórmula con factor de velocidad y demora de nodo
+        // En Dijkstra no sabemos si el nodo destino es el final, se usa false (conservador)
+        NodoInfo destinoInfo = (destino != null) ? destino.info() : null;
+        double tiempoSeg = tiempoAristaS(a, destinoInfo, 45.0, false);
 
-        // --- Exposición ---
+        // Exposición
         double expBase = exposicionBase(a.tipoVia());
         double expo;
         if (a.velocidadMax() != null) {
@@ -55,10 +100,8 @@ public class CostoMulticriterio implements FuncionCosto {
             expo = expBase;
         }
 
-        // --- Riesgo de cruce del nodo destino ---
-        double riesgoCruce = destino != null && destino.info() != null
-                ? destino.info().riesgoCruce()
-                : 0.0;
+        // Riesgo de cruce del nodo destino
+        double riesgoCruce = destinoInfo != null ? destinoInfo.riesgoCruce() : 0.0;
 
         return w.tiempo()      * (tiempoSeg / 60.0)
              + w.distancia()   * (dist / 100.0)
@@ -67,7 +110,7 @@ public class CostoMulticriterio implements FuncionCosto {
              + w.cruce()       * riesgoCruce;
     }
 
-    /** Velocidad efectiva de la vía en km/h (mínimo = velDefecto.minima). */
+    /** Velocidad libre de la vía en km/h (mínimo = velDefecto.minima). */
     public double velEfectiva(Arista a) {
         CostoProperties.VelDefecto vd = props.velDefecto();
         if (a.velocidadMax() != null) {
@@ -99,7 +142,6 @@ public class CostoMulticriterio implements FuncionCosto {
         };
     }
 
-    /** Normaliza variantes _link al tipo base para la tabla de costos. */
     private static String tipoViaBase(String tipoVia) {
         if (tipoVia == null) return "";
         return switch (tipoVia) {
