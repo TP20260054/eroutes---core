@@ -37,3 +37,7 @@ build/
 .neon
 node_modules/
 .env.local
+data/.venv/
+cache/
+data/cache/
+__pycache__/

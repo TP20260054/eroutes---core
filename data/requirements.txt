@@ -1,0 +1,3 @@
+osmnx
+psycopg2-binary
+python-dotenv

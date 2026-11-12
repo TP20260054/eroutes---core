@@ -1,0 +1,1 @@
+ALTER TABLE nodos ADD COLUMN control VARCHAR(30);
