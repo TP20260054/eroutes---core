@@ -1,6 +1,5 @@
 package tp20260054.eroutes.busqueda;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -15,28 +14,35 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import tp20260054.eroutes.busqueda.dto.ResultadoBusquedaDto;
 import tp20260054.eroutes.busqueda.dto.UbicacionInfoDto;
 import tp20260054.eroutes.mapeado.dto.Coordenada;
+import tp20260054.eroutes.seguridad.JwtService;
+import tp20260054.eroutes.seguridad.JwtConfig;
+import tp20260054.eroutes.seguridad.JwtService;
+import tp20260054.eroutes.seguridad.SecurityConfig;
+import tp20260054.eroutes.seguridad.TestSecurityConfig;
 
 @WebMvcTest(PlacesController.class)
+@Import({SecurityConfig.class, JwtConfig.class, TestSecurityConfig.class})
 @EnableConfigurationProperties(BusquedaProperties.class)
 @TestPropertySource(properties = {
         "eroutes.busqueda.limite-por-defecto=8",
         "eroutes.busqueda.limite-maximo=20",
         "eroutes.busqueda.radio-calle-m=60",
-        "eroutes.busqueda.radio-lugar-m=40"
+        "eroutes.busqueda.radio-lugar-m=40",
+        "eroutes.seguridad.jwt-secreto=test-secret-32bytes-para-pruebas-1234",
+        "eroutes.seguridad.jwt-expiracion-horas=1"
 })
 class PlacesControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockitoBean
-    private BusquedaService service;
+    @Autowired MockMvc mockMvc;
+    @MockitoBean BusquedaService service;
+    @MockitoBean JwtService jwtService;
 
     // ---- search ----
 
