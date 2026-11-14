@@ -12,6 +12,11 @@ import tp20260054.eroutes.routing.service.GrafoNoDisponibleException;
 import tp20260054.eroutes.routing.service.MismoNodoException;
 import tp20260054.eroutes.routing.service.PuntoFueraDeCoberturaException;
 import tp20260054.eroutes.routing.service.SinCaminoException;
+import tp20260054.eroutes.usuarios.CorreoDuplicadoException;
+import tp20260054.eroutes.usuarios.ContrasenaIncorrectaException;
+import tp20260054.eroutes.usuarios.CredencialesInvalidasException;
+import tp20260054.eroutes.usuarios.MaximoVehiculosException;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -30,6 +35,17 @@ public class ApiExceptionHandler {
 	ProblemDetail invalidParameters(Exception exception) {
 		return problem(HttpStatus.BAD_REQUEST, "Parámetros inválidos",
 				"No se pudieron convertir o validar los parámetros de la solicitud");
+	}
+
+	@ExceptionHandler(ContrasenaIncorrectaException.class)
+	ProblemDetail contrasenaIncorrecta(ContrasenaIncorrectaException exception) {
+		return problem(HttpStatus.BAD_REQUEST, "Contraseña incorrecta", exception.getMessage());
+	}
+
+	@ExceptionHandler(CredencialesInvalidasException.class)
+	ProblemDetail credencialesInvalidas(CredencialesInvalidasException exception) {
+		return problem(HttpStatus.UNAUTHORIZED, "Credenciales inválidas",
+				exception.getReason() != null ? exception.getReason() : exception.getMessage());
 	}
 
 	@ExceptionHandler(RecursoNoEncontradoException.class)
@@ -51,6 +67,22 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(GrafoNoDisponibleException.class)
 	ProblemDetail grafoNoDisponible(GrafoNoDisponibleException exception) {
 		return problem(HttpStatus.SERVICE_UNAVAILABLE, "Servicio no disponible", exception.getMessage());
+	}
+
+	@ExceptionHandler(CorreoDuplicadoException.class)
+	ProblemDetail correoDuplicado(CorreoDuplicadoException exception) {
+		return problem(HttpStatus.CONFLICT, "Correo duplicado", exception.getMessage());
+	}
+
+	@ExceptionHandler(MaximoVehiculosException.class)
+	ProblemDetail maximoVehiculos(MaximoVehiculosException exception) {
+		return problem(HttpStatus.CONFLICT, "Límite de vehículos alcanzado", exception.getMessage());
+	}
+
+	@ExceptionHandler(ResponseStatusException.class)
+	ProblemDetail responseStatus(ResponseStatusException exception) {
+		HttpStatus status = HttpStatus.valueOf(exception.getStatusCode().value());
+		return problem(status, status.getReasonPhrase(), exception.getReason());
 	}
 
 	@ExceptionHandler(Exception.class)

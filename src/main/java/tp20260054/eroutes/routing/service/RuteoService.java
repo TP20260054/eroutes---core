@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tp20260054.eroutes.mapeado.dto.Coordenada;
+import tp20260054.eroutes.mapeado.exception.RecursoNoEncontradoException;
 import tp20260054.eroutes.routing.algorithm.Dijkstra;
 import tp20260054.eroutes.routing.algorithm.ResultadoDijkstra;
 import tp20260054.eroutes.routing.costo.CostoMulticriterio;
@@ -20,18 +21,22 @@ import tp20260054.eroutes.routing.dto.TramoRutaDto;
 import tp20260054.eroutes.routing.graph.Arista;
 import tp20260054.eroutes.routing.graph.GrafoEnMemoria;
 import tp20260054.eroutes.routing.graph.GrafoProvider;
+import tp20260054.eroutes.usuarios.UsuarioRepository;
+import tp20260054.eroutes.usuarios.VehiculoMapper;
+import tp20260054.eroutes.usuarios.VehiculoMapper;
+import tp20260054.eroutes.usuarios.VehiculoRepository;
+import tp20260054.eroutes.usuarios.Vehiculo;
 import tp20260054.eroutes.vehiculo.PerfilVehiculo;
-import tp20260054.eroutes.vehiculo.PerfilVehiculoProvider;
 
 @Service
 @RequiredArgsConstructor
 public class RuteoService {
 
     private final GrafoProvider grafoProvider;
-    private final PerfilVehiculoProvider perfilProvider;
-    /** Spring inyecta todos los beans FuncionCosto indexados por su nombre de bean. */
-    private final Map<String, FuncionCosto> funcionesCosto;
     private final CostoMulticriterio costoMulticriterio;
+    private final Map<String, FuncionCosto> funcionesCosto;
+    private final UsuarioRepository usuarioRepository;
+    private final VehiculoRepository vehiculoRepository;
 
     @Value("${eroutes.routing.max-distancia-snap-m:200}")
     private int maxSnapM;
@@ -41,15 +46,15 @@ public class RuteoService {
 
     // -------------------------------------------------------------------------
 
-    public RutaDto calcular(double latOrigen, double lngOrigen,
+    public RutaDto calcular(Long usuarioId,
+                            double latOrigen, double lngOrigen,
                             double latDestino, double lngDestino,
-                            String criterioRaw) {
-        return calcular(latOrigen, lngOrigen, latDestino, lngDestino, criterioRaw, null);
-    }
+                            String criterioRaw,
+                            PesosDto pesosDto,
+                            Long vehiculoId) {
 
-    public RutaDto calcular(double latOrigen, double lngOrigen,
-                            double latDestino, double lngDestino,
-                            String criterioRaw, PesosDto pesosDto) {
+        // Resolver el perfil del vehículo
+        PerfilVehiculo perfil = resolverPerfil(usuarioId, vehiculoId);
 
         String criterio = (criterioRaw == null || criterioRaw.isBlank())
                 ? "MULTICRITERIO" : criterioRaw.toUpperCase();
@@ -61,18 +66,15 @@ public class RuteoService {
                     + "'. Valores válidos: MULTICRITERIO, DISTANCIA, TIEMPO");
         }
 
-        // Aplicar pesos de la solicitud solo para MULTICRITERIO y si está habilitado
         if ("MULTICRITERIO".equals(criterio) && permitirPesosEnSolicitud && pesosDto != null) {
             funcion = costoMulticriterio.conPesos(pesosDto);
         }
 
-        PerfilVehiculo perfil = perfilProvider.perfil();
         GrafoEnMemoria grafo = grafoProvider.obtenerPorCategoria(perfil.categoriaReglamentaria());
         if (grafo == null) {
             throw new GrafoNoDisponibleException("El grafo de ruteo no está disponible aún");
         }
 
-        // Snap de origen y destino al nodo más cercano
         int[] snapOrigen  = grafo.nodoMasCercano(latOrigen,  lngOrigen);
         int[] snapDestino = grafo.nodoMasCercano(latDestino, lngDestino);
         int idxOrigen  = snapOrigen[0];
@@ -92,7 +94,6 @@ public class RuteoService {
             throw new MismoNodoException("El origen y el destino coinciden en el mismo nodo del grafo");
         }
 
-        // Dijkstra
         ResultadoDijkstra resultado = Dijkstra.calcular(grafo, funcion, idxOrigen, idxDestino);
         if (!resultado.tieneCamino()) {
             throw new SinCaminoException("No existe camino entre el origen y el destino indicados");
@@ -106,6 +107,28 @@ public class RuteoService {
 
     // -------------------------------------------------------------------------
 
+    private PerfilVehiculo resolverPerfil(Long usuarioId, Long vehiculoId) {
+        var u = usuarioRepository.findByIdConVehiculoActivo(usuarioId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
+
+        Vehiculo v;
+        if (vehiculoId != null) {
+            // vehiculoId explícito: debe pertenecer al usuario
+            v = vehiculoRepository.findByIdAndUsuarioId(vehiculoId, usuarioId)
+                    .orElseThrow(() -> new RecursoNoEncontradoException(
+                            "Vehículo no encontrado"));
+        } else {
+            v = u.getVehiculoActivo();
+            if (v == null) {
+                throw new PuntoFueraDeCoberturaException(
+                        "Registra un vehículo para calcular rutas");
+            }
+        }
+        return VehiculoMapper.toPerfilVehiculo(v);
+    }
+
+    // -------------------------------------------------------------------------
+
     private RutaDto construirRuta(
             ResultadoDijkstra resultado, GrafoEnMemoria grafo,
             PerfilVehiculo perfil, String criterio,
@@ -115,7 +138,6 @@ public class RuteoService {
 
         List<Arista> aristas = resultado.aristas();
 
-        // Polilínea: concatenar geometrías sin duplicar puntos de unión
         List<Coordenada> coordenadas = new ArrayList<>();
         for (int i = 0; i < aristas.size(); i++) {
             double[][] geom = aristas.get(i).geom();
@@ -125,16 +147,12 @@ public class RuteoService {
             }
         }
 
-        // Tramos
         List<TramoRutaDto> tramos = aristas.stream()
                 .map(a -> new TramoRutaDto(a.tramoId(), a.nombre(), a.tipoVia(), a.longitudM()))
                 .toList();
 
-        // Métricas
         double distanciaTotal = aristas.stream().mapToDouble(Arista::longitudM).sum();
 
-        // Tiempo estimado con la misma fórmula que CostoMulticriterio/CostoTiempo
-        // El último nodo (destino final) NO suma demora
         double tiempoSeg = 0.0;
         for (int i = 0; i < aristas.size(); i++) {
             Arista a = aristas.get(i);
@@ -144,7 +162,6 @@ public class RuteoService {
                     a, destinoInfo, perfil.velocidadMaximaKmh(), esUltimo);
         }
 
-        // Exposición promedio ponderada por longitud
         double sumaExpoLong = 0, sumaLong = 0;
         for (Arista a : aristas) {
             double expBase = exposicionBase(a.tipoVia());
@@ -156,19 +173,16 @@ public class RuteoService {
         }
         double exposicionPromedio = sumaLong > 0 ? sumaExpoLong / sumaLong : 0.0;
 
-        // Tramos no validados
         double tramosNoValM = aristas.stream()
                 .filter(a -> !a.validado())
                 .mapToDouble(Arista::longitudM).sum();
         double pctNoVal = distanciaTotal > 0 ? (tramosNoValM / distanciaTotal) * 100.0 : 0.0;
 
-        // Cruces de riesgo
         int crucesRiesgo = 0;
         for (Arista arista : aristas) {
             if (grafo.nodo(arista.destino()).riesgoCruce() >= 0.5) crucesRiesgo++;
         }
 
-        // Extremos
         var nOrigen  = grafo.nodo(idxOrigen);
         var nDestino = grafo.nodo(idxDestino);
         ExtremoRutaDto extramoOrigen = new ExtremoRutaDto(
