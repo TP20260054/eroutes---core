@@ -1,13 +1,14 @@
 package tp20260054.eroutes.routing.costo;
 
-import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "eroutes.routing")
 public record CostoProperties(
         Pesos pesos,
         VelDefecto velDefecto,
-        Exposicion exposicion) {
+        Exposicion exposicion,
+        double factorVelocidadEfectiva,
+        DemoraNode demoraNodo) {
 
     public record Pesos(
             double tiempo,
@@ -36,4 +37,11 @@ public record CostoProperties(
             double livingStreet,
             double service,
             double otros) {}
+
+    /** Demoras en segundos al llegar a un nodo según su control. # PROVISIONAL */
+    public record DemoraNode(
+            double trafficSignals,
+            double stop,
+            double crossing,
+            double sinControl) {}
 }

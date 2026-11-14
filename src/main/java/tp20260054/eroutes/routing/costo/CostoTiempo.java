@@ -13,7 +13,12 @@ public class CostoTiempo implements FuncionCosto {
 
     @Override
     public double costo(Arista arista, ContextoNodo destino) {
-        double velKmh = multicriterio.velEfectiva(arista);
-        return arista.longitudM() / (velKmh / 3.6);
+        // Usa la misma fórmula que el multicriterio (factor + demora), solo tiempo
+        // velVehiculo 45 km/h; en Dijkstra no es el nodo final
+        return multicriterio.tiempoAristaS(
+                arista,
+                destino != null ? destino.info() : null,
+                45.0,
+                false);
     }
 }
