@@ -147,9 +147,16 @@ public class RuteoService {
             }
         }
 
-        List<TramoRutaDto> tramos = aristas.stream()
-                .map(a -> new TramoRutaDto(a.tramoId(), a.nombre(), a.tipoVia(), a.longitudM()))
-                .toList();
+        List<TramoRutaDto> tramos = new ArrayList<>();
+        for (Arista a : aristas) {
+            double[][] geom = a.geom();
+            List<Coordenada> coordsTramo = new ArrayList<>(geom.length);
+            for (double[] pt : geom) {
+                coordsTramo.add(new Coordenada(pt[0], pt[1]));
+            }
+            tramos.add(new TramoRutaDto(a.tramoId(), a.nombre(), a.tipoVia(),
+                    a.longitudM(), coordsTramo));
+        }
 
         double distanciaTotal = aristas.stream().mapToDouble(Arista::longitudM).sum();
 
