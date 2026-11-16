@@ -228,6 +228,66 @@ class GrafoEnMemoriaTest {
         assertThat(distMulti).isGreaterThan(distDirecta); // rodeo > directo en distancia
     }
 
+    @Test
+    void coordenadasDeTramos_concatenanIgualQueRuta_yPuntosDeUnionCoinciden() {
+        // Cadena de 3 nodos con geometría real (no constante GEOM)
+        // para poder verificar coordenadas distintas por tramo
+        double[][] geom01 = {{0.0, 0.0}, {0.5, 0.5}, {1.0, 1.0}};
+        double[][] geom12 = {{1.0, 1.0}, {1.5, 1.5}, {2.0, 2.0}};
+
+        List<NodoRaw> nodos = List.of(nodo(0, 0, 0), nodo(1, 1, 1), nodo(2, 2, 2));
+        List<AristaRaw> aristas = List.of(
+                new AristaRaw(0, 1, 1L, "Calle A", "residential", 100.0, null, false, false, false, geom01),
+                new AristaRaw(1, 0, 2L, "Calle A", "residential", 100.0, null, false, false, false, invertir(geom01)),
+                new AristaRaw(1, 2, 3L, "Calle B", "residential", 100.0, null, false, false, false, geom12),
+                new AristaRaw(2, 1, 4L, "Calle B", "residential", 100.0, null, false, false, false, invertir(geom12)));
+
+        GrafoEnMemoria g = GrafoEnMemoria.construir(nodos, aristas, Set.of());
+        int i0 = indice(g, 0), i2 = indice(g, 2);
+
+        var resultado = tp20260054.eroutes.routing.algorithm.Dijkstra.calcular(
+                g, (a, ctx) -> a.longitudM(), i0, i2);
+        assertThat(resultado.tieneCamino()).isTrue();
+
+        List<tp20260054.eroutes.routing.graph.Arista> aristasRuta = resultado.aristas();
+
+        // Construir coordenadas globales (como hace RuteoService)
+        List<double[]> coordsRuta = new java.util.ArrayList<>();
+        for (int i = 0; i < aristasRuta.size(); i++) {
+            double[][] geom = aristasRuta.get(i).geom();
+            int inicio = (i == 0) ? 0 : 1;
+            for (int j = inicio; j < geom.length; j++) coordsRuta.add(geom[j]);
+        }
+
+        // Construir coordenadas por tramo (como hace RuteoService para TramoRutaDto)
+        List<List<double[]>> coordsPorTramo = aristasRuta.stream()
+                .map(a -> java.util.Arrays.asList(a.geom()))
+                .toList();
+
+        // 1. La concatenación sin duplicar puntos de unión coincide con coordsRuta
+        List<double[]> concat = new java.util.ArrayList<>();
+        for (int i = 0; i < coordsPorTramo.size(); i++) {
+            List<double[]> pts = coordsPorTramo.get(i);
+            int desde = (i == 0) ? 0 : 1;
+            for (int j = desde; j < pts.size(); j++) concat.add(pts.get(j));
+        }
+        assertThat(concat).hasSameSizeAs(coordsRuta);
+        for (int i = 0; i < coordsRuta.size(); i++) {
+            assertThat(concat.get(i)[0]).isEqualTo(coordsRuta.get(i)[0]);
+            assertThat(concat.get(i)[1]).isEqualTo(coordsRuta.get(i)[1]);
+        }
+
+        // 2. El primer punto de cada tramo (salvo el primero) coincide con el último del anterior
+        for (int i = 1; i < coordsPorTramo.size(); i++) {
+            List<double[]> prev = coordsPorTramo.get(i - 1);
+            List<double[]> curr = coordsPorTramo.get(i);
+            double[] ultimoPrev  = prev.get(prev.size() - 1);
+            double[] primeroCurr = curr.get(0);
+            assertThat(primeroCurr[0]).isEqualTo(ultimoPrev[0]);
+            assertThat(primeroCurr[1]).isEqualTo(ultimoPrev[1]);
+        }
+    }
+
     // ---- helpers de test ----
 
     private static int indice(GrafoEnMemoria g, long osmId) {
@@ -247,5 +307,11 @@ class GrafoEnMemoriaTest {
             case "service"      -> 0.2;
             default             -> 0.5;
         };
+    }
+
+    private static double[][] invertir(double[][] geom) {
+        double[][] inv = new double[geom.length][];
+        for (int i = 0; i < geom.length; i++) inv[i] = geom[geom.length - 1 - i];
+        return inv;
     }
 }
