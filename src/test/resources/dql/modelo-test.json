@@ -1,0 +1,137 @@
+{
+  "formato": 1,
+  "version": "dql-test-manual",
+  "entrada_dim": 14,
+  "features": [
+    "desvio",
+    "ev_bloqueo_total",
+    "ev_obra",
+    "ev_baches_severos",
+    "ev_vehiculo_en_ciclovia",
+    "gravedad",
+    "dist_evento_ruta",
+    "velocidad_rel",
+    "perfil_bicicleta_electrica",
+    "perfil_scooter_electrico",
+    "perfil_bicimoto",
+    "perfil_moto_electrica",
+    "long_restante",
+    "recalculos_recientes"
+  ],
+  "normalizacion": {
+    "dist_evento_max_m": 1000,
+    "long_restante_max_m": 5000,
+    "max_recalculos_norm": 5,
+    "ventana_recalculos_s": 300
+  },
+  "acciones": [
+    "MANTENER",
+    "RECALCULAR_VIGENTE",
+    "RECALCULAR_SEGURA"
+  ],
+  "capas": [
+    {
+      "w": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          2.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          -2.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "b": [
+        0.0,
+        0.0,
+        0.5,
+        0.0
+      ],
+      "activacion": "relu"
+    },
+    {
+      "w": [
+        [
+          0.0,
+          0.0,
+          0.5,
+          0.0
+        ],
+        [
+          2.0,
+          0.0,
+          0.5,
+          0.0
+        ],
+        [
+          0.0,
+          2.0,
+          0.5,
+          0.0
+        ]
+      ],
+      "b": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "activacion": "lineal"
+    }
+  ]
+}

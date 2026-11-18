@@ -55,7 +55,13 @@ public final class Dijkstra {
             for (Arista arista : grafo.adyacentes(u)) {
                 int v = arista.destino();
                 ContextoNodo ctx = new ContextoNodo(grafo.nodo(v));
-                double nuevoCosto = dist[u] + funcion.costo(arista, ctx);
+                double costoArista = funcion.costo(arista, ctx);
+                // Omite tramos con costo no finito (p. ej. bloqueados por DQL).
+                // No afecta a las funciones de costo finito existentes.
+                if (!Double.isFinite(costoArista)) {
+                    continue;
+                }
+                double nuevoCosto = dist[u] + costoArista;
                 if (nuevoCosto < dist[v]) {
                     dist[v] = nuevoCosto;
                     prevNodo[v] = u;

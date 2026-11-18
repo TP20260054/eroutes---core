@@ -1,12 +1,8 @@
 package tp20260054.eroutes.seguridad;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
-import io.swagger.v3.oas.annotations.security.SecurityScheme;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -18,6 +14,13 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
+import io.swagger.v3.oas.annotations.security.SecurityScheme;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Configura Spring Security: sin estado, JWT HS256, CSRF deshabilitado.
@@ -48,6 +51,8 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/routes").authenticated()
                 .requestMatchers("/api/v1/me/**").authenticated()
                 .requestMatchers("/api/v1/vehiculos/**").authenticated()
+                .requestMatchers("/api/v1/events/**").authenticated()
+                .requestMatchers("/api/v1/navigations/**").authenticated()
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(rs -> rs

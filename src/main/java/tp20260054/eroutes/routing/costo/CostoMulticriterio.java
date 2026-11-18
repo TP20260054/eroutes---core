@@ -92,13 +92,7 @@ public class CostoMulticriterio implements FuncionCosto {
         double tiempoSeg = tiempoAristaS(a, destinoInfo, 45.0, false);
 
         // Exposición
-        double expBase = exposicionBase(a.tipoVia());
-        double expo;
-        if (a.velocidadMax() != null) {
-            expo = Math.min(1.0, expBase * clamp(a.velocidadMax() / 50.0, 0.6, 1.2));
-        } else {
-            expo = expBase;
-        }
+        double expo = exposicionArista(a);
 
         // Riesgo de cruce del nodo destino
         double riesgoCruce = destinoInfo != null ? destinoInfo.riesgoCruce() : 0.0;
@@ -126,6 +120,15 @@ public class CostoMulticriterio implements FuncionCosto {
             case "service"       -> vd.service();
             default              -> vd.otros();
         };
+    }
+
+    /** Exposición [0, 1] de una arista: base por tipo de vía ajustada por la velocidad máxima. */
+    public double exposicionArista(Arista a) {
+        double expBase = exposicionBase(a.tipoVia());
+        if (a.velocidadMax() != null) {
+            return Math.min(1.0, expBase * clamp(a.velocidadMax() / 50.0, 0.6, 1.2));
+        }
+        return expBase;
     }
 
     private double exposicionBase(String tipoVia) {
