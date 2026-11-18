@@ -1,6 +1,5 @@
 package tp20260054.eroutes.mapeado.exception;
 
-import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -8,15 +7,20 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.server.ResponseStatusException;
+
+import jakarta.validation.ConstraintViolationException;
+import tp20260054.eroutes.eventos.EventoFueraDeCoberturaException;
+import tp20260054.eroutes.recalculo.MuestraInvalidaException;
+import tp20260054.eroutes.recalculo.NavegacionNoEncontradaException;
 import tp20260054.eroutes.routing.service.GrafoNoDisponibleException;
 import tp20260054.eroutes.routing.service.MismoNodoException;
 import tp20260054.eroutes.routing.service.PuntoFueraDeCoberturaException;
 import tp20260054.eroutes.routing.service.SinCaminoException;
-import tp20260054.eroutes.usuarios.CorreoDuplicadoException;
 import tp20260054.eroutes.usuarios.ContrasenaIncorrectaException;
+import tp20260054.eroutes.usuarios.CorreoDuplicadoException;
 import tp20260054.eroutes.usuarios.CredencialesInvalidasException;
 import tp20260054.eroutes.usuarios.MaximoVehiculosException;
-import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -61,6 +65,22 @@ public class ApiExceptionHandler {
 	@ExceptionHandler({PuntoFueraDeCoberturaException.class, MismoNodoException.class})
 	ProblemDetail fueraDeCobertura(RuntimeException exception) {
 		return problem(HttpStatus.UNPROCESSABLE_ENTITY, "Punto fuera de la zona cubierta",
+				exception.getMessage());
+	}
+
+	@ExceptionHandler(MuestraInvalidaException.class)
+	ProblemDetail muestraInvalida(MuestraInvalidaException exception) {
+		return problem(HttpStatus.BAD_REQUEST, "Muestra inválida", exception.getMessage());
+	}
+
+	@ExceptionHandler(NavegacionNoEncontradaException.class)
+	ProblemDetail navegacionNoEncontrada(NavegacionNoEncontradaException exception) {
+		return problem(HttpStatus.NOT_FOUND, "Navegación no encontrada", exception.getMessage());
+	}
+
+	@ExceptionHandler(EventoFueraDeCoberturaException.class)
+	ProblemDetail eventoFueraDeCobertura(EventoFueraDeCoberturaException exception) {
+		return problem(HttpStatus.UNPROCESSABLE_ENTITY, "Evento fuera de cobertura",
 				exception.getMessage());
 	}
 

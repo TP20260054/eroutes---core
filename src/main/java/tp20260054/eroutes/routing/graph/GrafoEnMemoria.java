@@ -1,13 +1,13 @@
 package tp20260054.eroutes.routing.graph;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.ArrayDeque;
-import java.util.Deque;
 
 /**
  * Grafo dirigido en memoria. Sin dependencias de Spring ni JPA.
@@ -339,7 +339,7 @@ public final class GrafoEnMemoria {
         return new int[]{mejorIdx, (int) Math.round(mejorDist)};
     }
 
-    private static double haversine(double lat1, double lng1, double lat2, double lng2) {
+    public static double haversine(double lat1, double lng1, double lat2, double lng2) {
         final double R = 6_371_000;
         double dLat = Math.toRadians(lat2 - lat1);
         double dLng = Math.toRadians(lng2 - lng1);

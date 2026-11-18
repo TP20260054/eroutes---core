@@ -1,9 +1,12 @@
 package tp20260054.eroutes.mapeado.repository;
 
-import jakarta.persistence.EntityManager;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
+import java.util.Optional;
+
 import org.springframework.stereotype.Repository;
+
+import jakarta.persistence.EntityManager;
+import lombok.RequiredArgsConstructor;
 import tp20260054.eroutes.mapeado.entity.Tramo;
 
 @Repository
@@ -56,5 +59,27 @@ public class TramoRepositoryImpl implements TramoRepositoryCustom {
 			query.setParameter("validado", validado);
 		}
 		return query.getResultList();
+	}
+
+	@Override
+	@SuppressWarnings("unchecked")
+	public Optional<Tramo> findTramoMasCercano(double lng, double lat, double maxDistanciaM) {
+		// <-> usa el índice GIST de geom (KNN scan). ST_DWithin prefiltra por radio
+		// antes de ordenar, lo que evita un full-scan en tablas grandes.
+		var result = entityManager.createNativeQuery("""
+				SELECT t.*
+				FROM tramos t
+				WHERE ST_DWithin(
+				          t.geom::geography,
+				          ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+				          :maxDist)
+				ORDER BY t.geom <-> ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)
+				LIMIT 1
+				""", Tramo.class)
+				.setParameter("lng", lng)
+				.setParameter("lat", lat)
+				.setParameter("maxDist", maxDistanciaM)
+				.getResultList();
+		return result.isEmpty() ? Optional.empty() : Optional.of((Tramo) result.get(0));
 	}
 }
