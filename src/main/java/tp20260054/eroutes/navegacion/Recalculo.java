@@ -86,12 +86,18 @@ public class Recalculo {
     @Column(name = "ruta_anterior_bloqueada")
     private Boolean rutaAnteriorBloqueada;
 
-    /** NULL si la ruta anterior estaba bloqueada. */
+    /** Costo de la ruta anterior con la misma función que {@code costoNuevo}; NULL si estaba bloqueada. */
     @Column(name = "costo_anterior")
     private Double costoAnterior;
 
     @Column(name = "costo_nuevo")
     private Double costoNuevo;
+    /** Tiempo (s) de la ruta anterior desde la posición actual, con la misma fórmula que el nuevo. */
+    @Column(name = "costo_anterior_tiempo_s")
+    private Double costoAnteriorTiempoS;
+    /** Tiempo (s) de la ruta nueva, con la misma fórmula de tiempo que la anterior. */
+    @Column(name = "costo_nuevo_tiempo_s")
+    private Double costoNuevoTiempoS;
 
     /** Etiqueta para OE4 (ver 3.6). */
     @Column(name = "innecesario")

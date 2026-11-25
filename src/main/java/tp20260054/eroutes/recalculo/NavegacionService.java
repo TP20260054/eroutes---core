@@ -73,6 +73,7 @@ public class NavegacionService {
     private final SesionNavegacionStore sesionStore;
     private final RegistroEventosActivos registroEventos;
     private final RecalculoProperties recalculoProps;
+    private final RecalculoService recalculoService;
     private final ObjectMapper objectMapper;
 
     @Value("${eroutes.routing.max-distancia-snap-m:200}")
@@ -172,72 +173,18 @@ public class NavegacionService {
     // Recálculo manual
     // =========================================================================
 
+    /**
+     * Fuerza un recálculo (acción 1, sin consultar la política). Delega en
+     * {@link RecalculoService#recalcularManual}, que lo registra en {@code recalculos}
+     * con disparador {@code MANUAL} y los mismos campos que el recálculo automático.
+     */
     @Transactional
     public RecalculoManualDto recalcularManual(Long navegacionId, Long usuarioId,
-                                               double latActual, double lngActual) {
-        SesionNavegacion sesion = sesionStore.obtener(navegacionId, usuarioId)
-                .orElseThrow(() -> new NavegacionNoEncontradaException(
-                        "Navegación " + navegacionId + " no encontrada o no accesible"));
-
-        Navegacion nav = navegacionRepo.findById(navegacionId)
-                .orElseThrow(() -> new NavegacionNoEncontradaException(
-                        "Navegación " + navegacionId + " no encontrada en BD"));
-
-        double latDestino = nav.getDestino().getY();
-        double lngDestino = nav.getDestino().getX();
-        PerfilVehiculo perfil = sesion.perfil();
-        Preset preset = sesion.preset();
-
-        SnapshotEventos snapshot = registroEventos.instantanea();
-
-        ReferenciaRuta referencia;
-        try {
-            referencia = referenciaService.calcular(
-                    perfil, latActual, lngActual, latDestino, lngDestino);
-        } catch (SinCaminoException | MismoNodoException | PuntoFueraDeCoberturaException e) {
-            return new RecalculoManualDto(false, e.getMessage(), null);
-        }
-
-        GrafoEnMemoria grafo = grafoProvider.obtenerPorCategoria(
-                perfil.categoriaReglamentaria());
-        if (grafo == null) {
-            return new RecalculoManualDto(false, "El grafo no está disponible", null);
-        }
-
-        int[] snapActual = grafo.nodoMasCercano(latActual, lngActual);
-        int[] snapDest   = grafo.nodoMasCercano(latDestino, lngDestino);
-        if (snapActual[1] > maxSnapM) {
-            return new RecalculoManualDto(false, "Posición fuera de cobertura", null);
-        }
-        if (snapActual[0] == snapDest[0]) {
-            return new RecalculoManualDto(false,
-                    "La posición actual coincide con el destino", null);
-        }
-
-        CostoPreset funcion = costoPresetFactory.crear(
-                presetProps.de(preset), referencia, perfil, snapshot);
-
-        NodoInfo nDest = grafo.nodo(snapDest[0]);
-        var heuristica = HeuristicaMedible.crear(
-                nDest.lat(), nDest.lng(),
-                perfil.velocidadMaximaKmh(), referencia, presetProps.de(preset));
-
-        Zona zona = Zona.alrededor(latActual, lngActual, latDestino, lngDestino, margenZonaM);
-        ResultadoDijkstra resultado = AStar.calcular(
-                grafo, funcion, heuristica, snapActual[0], snapDest[0], zona);
-
-        if (!resultado.tieneCamino()) {
-            return new RecalculoManualDto(false,
-                    RecalculoService.mensajeSinAlternativa(), null);
-        }
-
-        RutaDto rutaDto = rutaBuilder.construir(resultado, grafo, perfil, preset.name(),
-                latActual, lngActual, snapActual[1],
-                latDestino, lngDestino, snapDest[1],
-                snapActual[0], snapDest[0]);
-
-        sesion.reemplazarRuta(resultado.aristas());
-        return new RecalculoManualDto(true, null, rutaDto);
+                                               double latActual, double lngActual,
+                                               double velocidadKmh) {
+        RecalculoService.ResultadoPosicion r = recalculoService.recalcularManual(
+                navegacionId, usuarioId, latActual, lngActual, velocidadKmh);
+        return new RecalculoManualDto(r.exito(), r.mensaje(), r.nuevaRuta());
     }
 
     // =========================================================================

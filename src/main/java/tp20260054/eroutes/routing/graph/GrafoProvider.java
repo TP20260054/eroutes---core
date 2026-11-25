@@ -57,6 +57,11 @@ public class GrafoProvider {
         }
     }
 
+    /** true cuando el grafo precargado al arrancar ya está construido en memoria. */
+    public boolean estaPrecargado() {
+        return nodosRaw != null && !cache.isEmpty();
+    }
+
     public GrafoEnMemoria obtenerPorCategoria(String categoriaReglamentaria) {
         if (nodosRaw == null) return null;
         return cache.computeIfAbsent(categoriaReglamentaria, this::construirParaCategoria);

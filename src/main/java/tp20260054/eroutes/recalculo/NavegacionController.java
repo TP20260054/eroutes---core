@@ -113,7 +113,7 @@ public class NavegacionController {
 
         Long usuarioId = Long.parseLong(jwt.getSubject());
         validarMuestra(dto);
-        return navService.recalcularManual(id, usuarioId, dto.lat(), dto.lng());
+        return navService.recalcularManual(id, usuarioId, dto.lat(), dto.lng(), dto.velocidadKmh());
     }
 
     // =========================================================================

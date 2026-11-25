@@ -3,6 +3,7 @@ package tp20260054.eroutes.seguridad;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -38,23 +39,28 @@ public class SecurityConfig {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder jwtDecoder) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder jwtDecoder,
+            @Value("${springdoc.swagger-ui.enabled:false}") boolean swaggerHabilitado) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/v1/auth/**").permitAll()
-                .requestMatchers("/actuator/health").permitAll()
-                .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/v1/map/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll()
-                .requestMatchers("/api/v1/routes").authenticated()
-                .requestMatchers("/api/v1/me/**").authenticated()
-                .requestMatchers("/api/v1/vehiculos/**").authenticated()
-                .requestMatchers("/api/v1/events/**").authenticated()
-                .requestMatchers("/api/v1/navigations/**").authenticated()
-                .anyRequest().authenticated()
-            )
+            .authorizeHttpRequests(auth -> {
+                auth.requestMatchers("/api/v1/auth/**").permitAll();
+                // Health y sus grupos (liveness/readiness) para los probes de la plataforma
+                auth.requestMatchers("/actuator/health", "/actuator/health/**").permitAll();
+                // Swagger/OpenAPI solo son públicos si springdoc.swagger-ui.enabled=true
+                if (swaggerHabilitado) {
+                    auth.requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll();
+                }
+                auth.requestMatchers(HttpMethod.GET, "/api/v1/map/**").permitAll();
+                auth.requestMatchers(HttpMethod.GET, "/api/v1/places/**").permitAll();
+                auth.requestMatchers("/api/v1/routes").authenticated();
+                auth.requestMatchers("/api/v1/me/**").authenticated();
+                auth.requestMatchers("/api/v1/vehiculos/**").authenticated();
+                auth.requestMatchers("/api/v1/events/**").authenticated();
+                auth.requestMatchers("/api/v1/navigations/**").authenticated();
+                auth.anyRequest().authenticated();
+            })
             .oauth2ResourceServer(rs -> rs
                 .jwt(jwt -> jwt.decoder(jwtDecoder))
                 .authenticationEntryPoint(this::handleAuthError)
