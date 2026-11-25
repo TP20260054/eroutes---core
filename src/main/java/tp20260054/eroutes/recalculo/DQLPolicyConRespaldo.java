@@ -48,8 +48,10 @@ public class DQLPolicyConRespaldo implements RecalculationPolicy {
             log.info("[DQL] Modelo cargado: versión '{}'", modelo.version());
         } else {
             this.dqlPolicy = null;
-            log.warn("[DQL] Modelo no disponible: {}. Todas las decisiones usarán respaldo.",
-                    modelo.motivoNoDisponible());
+            log.warn("[DQL] Modelo no disponible (eroutes.recalculo.modelo.ruta='{}'): {}. "
+                            + "Todas las decisiones usarán la política de respaldo {}.",
+                    props.modelo() != null ? props.modelo().ruta() : null,
+                    modelo.motivoNoDisponible(), respaldo.version());
         }
     }
 

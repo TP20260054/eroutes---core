@@ -8,9 +8,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import jakarta.validation.ConstraintViolationException;
 import tp20260054.eroutes.eventos.EventoFueraDeCoberturaException;
+import tp20260054.eroutes.eventos.LimiteEventosActivosException;
 import tp20260054.eroutes.recalculo.MuestraInvalidaException;
 import tp20260054.eroutes.recalculo.NavegacionNoEncontradaException;
 import tp20260054.eroutes.routing.service.GrafoNoDisponibleException;
@@ -97,6 +99,17 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(MaximoVehiculosException.class)
 	ProblemDetail maximoVehiculos(MaximoVehiculosException exception) {
 		return problem(HttpStatus.CONFLICT, "Límite de vehículos alcanzado", exception.getMessage());
+	}
+
+	@ExceptionHandler(LimiteEventosActivosException.class)
+	ProblemDetail limiteEventos(LimiteEventosActivosException exception) {
+		return problem(HttpStatus.CONFLICT, "Límite de eventos alcanzado", exception.getMessage());
+	}
+
+	@ExceptionHandler(NoResourceFoundException.class)
+	ProblemDetail rutaInexistente(NoResourceFoundException exception) {
+		return problem(HttpStatus.NOT_FOUND, "Recurso no encontrado",
+				"El recurso solicitado no existe");
 	}
 
 	@ExceptionHandler(ResponseStatusException.class)

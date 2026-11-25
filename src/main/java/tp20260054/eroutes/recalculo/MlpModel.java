@@ -3,6 +3,8 @@ package tp20260054.eroutes.recalculo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -28,6 +30,9 @@ import java.util.List;
  * <p>No usa ONNX ni DJL; toda la aritmética es en {@code double[]}.
  */
 public final class MlpModel {
+
+    private static final String PREFIJO_CLASSPATH = "classpath:";
+    private static final String PREFIJO_FILE = "file:";
 
     // ---- Capas ----
     private final double[][][] pesos;  // pesos[capa][neurona_salida][neurona_entrada]
@@ -69,7 +74,9 @@ public final class MlpModel {
      * Carga el modelo desde la ruta dada validando contra las constantes de
      * {@link RecalculoProperties}.
      *
-     * @param ruta             ruta al archivo JSON; {@code null}/vacío → no disponible
+     * @param ruta             ruta al JSON: archivo en disco ({@code /ruta/modelo.json} o
+     *                         {@code file:...}) o recurso del classpath ({@code classpath:dql/modelo.json});
+     *                         {@code null}/vacío → no disponible
      * @param props            propiedades de recálculo para validar normalización
      * @return instancia con {@link #estaDisponible()} = true o con motivo de fallo
      */
@@ -77,16 +84,50 @@ public final class MlpModel {
         if (ruta == null || ruta.isBlank()) {
             return new MlpModel("MODELO_NO_DISPONIBLE: ruta no configurada");
         }
-        Path path = Path.of(ruta);
-        if (!Files.exists(path)) {
-            return new MlpModel("MODELO_NO_DISPONIBLE: archivo no encontrado en " + ruta);
-        }
+        String r = ruta.trim();
         try {
-            byte[] bytes = Files.readAllBytes(path);
+            byte[] bytes;
+            if (r.startsWith(PREFIJO_CLASSPATH)) {
+                // Recurso empaquetado dentro del jar (p. ej. classpath:dql/modelo.json)
+                String recurso = r.substring(PREFIJO_CLASSPATH.length());
+                while (recurso.startsWith("/")) recurso = recurso.substring(1);
+                try (InputStream in = MlpModel.class.getClassLoader().getResourceAsStream(recurso)) {
+                    if (in == null) {
+                        return new MlpModel(
+                                "MODELO_NO_DISPONIBLE: recurso no encontrado en el classpath: " + recurso);
+                    }
+                    bytes = in.readAllBytes();
+                }
+            } else {
+                // Archivo en disco: ruta simple o con prefijo file:
+                Path path = resolverArchivo(r);
+                if (!Files.exists(path)) {
+                    return new MlpModel("MODELO_NO_DISPONIBLE: archivo no encontrado en " + ruta);
+                }
+                bytes = Files.readAllBytes(path);
+            }
             return parsear(bytes, props);
         } catch (IOException e) {
             return new MlpModel("MODELO_NO_DISPONIBLE: error al leer el archivo – " + e.getMessage());
+        } catch (RuntimeException e) {
+            return new MlpModel("MODELO_NO_DISPONIBLE: ruta inválida '" + ruta + "' – " + e.getMessage());
         }
+    }
+
+    /** Ruta simple, {@code file:/abs/ruta}, {@code file:///abs/ruta} o {@code file:relativa/ruta}. */
+    private static Path resolverArchivo(String ruta) {
+        if (!ruta.startsWith(PREFIJO_FILE)) {
+            return Path.of(ruta);
+        }
+        String resto = ruta.substring(PREFIJO_FILE.length());
+        if (resto.startsWith("/")) {
+            try {
+                return Path.of(URI.create(ruta));
+            } catch (IllegalArgumentException e) {
+                return Path.of(resto);
+            }
+        }
+        return Path.of(resto);
     }
 
     /** Variante que acepta el contenido JSON directamente (para tests). */

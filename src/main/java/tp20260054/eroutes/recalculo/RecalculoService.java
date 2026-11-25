@@ -25,9 +25,11 @@ import tp20260054.eroutes.navegacion.NavegacionRepository;
 import tp20260054.eroutes.navegacion.Recalculo;
 import tp20260054.eroutes.navegacion.RecalculoRepository;
 import tp20260054.eroutes.routing.algorithm.AStar;
+import tp20260054.eroutes.routing.algorithm.Heuristica;
 import tp20260054.eroutes.routing.algorithm.HeuristicaMedible;
 import tp20260054.eroutes.routing.algorithm.ResultadoDijkstra;
 import tp20260054.eroutes.routing.algorithm.Zona;
+import tp20260054.eroutes.routing.costo.ContextoNodo;
 import tp20260054.eroutes.routing.costo.CostoPresetFactory;
 import tp20260054.eroutes.routing.costo.CostoTiempo;
 import tp20260054.eroutes.routing.costo.FuncionCosto;
@@ -70,6 +72,9 @@ import tp20260054.eroutes.routing.service.SinCaminoException;
 public class RecalculoService {
 
     private static final Logger log = LoggerFactory.getLogger(RecalculoService.class);
+
+    /** Versión de política registrada en {@code recalculos.policy_version} para recálculos manuales. */
+    static final String POLITICA_MANUAL = "MANUAL-1.0";
 
     // ---- Colaboradores ----
     private final SesionNavegacionStore sesionStore;
@@ -133,7 +138,7 @@ public class RecalculoService {
         // ----- Paso 3: determinar disparador -----
         // Evento bloqueante más cercano
         EventoVial eventoRelevante = seleccionarEventoRelevante(
-                aledanos, sesion.aristasRuta(), sesion.estadoDesvio().indiceArista());
+                aledanos, sesion.aristasRuta(), sesion.estadoDesvio().indiceArista(), lat, lng);
 
         DisparadorRecalculo disparador = determinarDisparador(
                 desvioAlcanzado, eventoRelevante != null);
@@ -170,6 +175,58 @@ public class RecalculoService {
 
         sesion.registrarDecision(bitmaskActual);
 
+        return ejecutarYRegistrar(sesion, snapshot, aledanos, estado, decision, lat, lng, tInicio);
+    }
+
+    /**
+     * Recálculo manual: fuerza {@link Accion#RECALCULAR_VIGENTE} sin consultar la política
+     * (sin antirrebote) y lo registra en {@code recalculos} con disparador
+     * {@link DisparadorRecalculo#MANUAL}, con los mismos campos que el recálculo automático.
+     *
+     * @param velocidadKmh velocidad informada por el cliente (alimenta la feature velocidad_rel)
+     * @throws NavegacionNoEncontradaException si la sesión no existe o es de otro usuario
+     */
+    @Transactional
+    public ResultadoPosicion recalcularManual(long navegacionId, long usuarioId,
+                                              double lat, double lng, double velocidadKmh) {
+        long tInicio = System.currentTimeMillis();
+
+        SesionNavegacion sesion = sesionStore.obtener(navegacionId, usuarioId)
+                .orElseThrow(() -> new NavegacionNoEncontradaException(
+                        "Navegación " + navegacionId + " no encontrada o no accesible"));
+
+        boolean desvio;
+        synchronized (sesion) {
+            desvio = detectorDesvio.procesar(sesion.estadoDesvio(), lat, lng);
+        }
+
+        SnapshotEventos snapshot = registroEventos.instantanea();
+        List<EventoVial> aledanos = registroEventos.cercanos(lat, lng, props.umbralBloqueoM());
+        EventoVial eventoRelevante = seleccionarEventoRelevante(
+                aledanos, sesion.aristasRuta(), sesion.estadoDesvio().indiceArista(), lat, lng);
+
+        int recalculosRecientes = recalculoRepo.contarAccionesDesde(
+                navegacionId,
+                OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(props.ventanaRecalculosS()));
+
+        EstadoRecalculo estado = construirEstado(
+                sesion, DisparadorRecalculo.MANUAL, desvio, eventoRelevante,
+                lat, lng, velocidadKmh, recalculosRecientes);
+
+        DecisionConMetadatos decision = new DecisionConMetadatos(
+                Accion.RECALCULAR_VIGENTE, false, null, POLITICA_MANUAL, 0L);
+
+        return ejecutarYRegistrar(sesion, snapshot, aledanos, estado, decision, lat, lng, tInicio);
+    }
+
+    /**
+     * Pasos 5 a 8 comunes al recálculo automático y al manual: ejecutar la acción,
+     * registrar en {@code recalculos} y reemplazar la ruta activa si hubo una nueva.
+     */
+    private ResultadoPosicion ejecutarYRegistrar(SesionNavegacion sesion, SnapshotEventos snapshot,
+                                                 List<EventoVial> aledanos, EstadoRecalculo estado,
+                                                 DecisionConMetadatos decision,
+                                                 double lat, double lng, long tInicio) {
         // ----- Paso 5: ejecutar acción -----
         long tInicioCalc = System.currentTimeMillis();
         ResultadoAccion resultado = ejecutarAccion(
@@ -180,11 +237,11 @@ public class RecalculoService {
         long tCalcMs = tFinCalc - tInicioCalc;
 
         // ----- Paso 6: registrar -----
-        Navegacion navegacion = navegacionRepo.findById(navegacionId)
+        Navegacion navegacion = navegacionRepo.findById(sesion.navegacionId())
                 .orElseThrow(() -> new NavegacionNoEncontradaException(
-                        "Navegación " + navegacionId + " no encontrada en BD"));
+                        "Navegación " + sesion.navegacionId() + " no encontrada en BD"));
 
-        registrar(navegacion, decision, estado, disparador, resultado,
+        registrar(navegacion, decision, estado, estado.disparador(), resultado,
                 decision.tiempoInferenciaMs(), tCalcMs, tTotalServidor);
 
         // ----- Paso 8: reemplazar ruta si hubo nueva ruta -----
@@ -228,43 +285,40 @@ public class RecalculoService {
      * primero los que están en la ruta restante (menor distancia a lo largo de la ruta);
      * si ninguno está en la ruta, el más cercano en línea recta; desempate por mayor gravedad.
      */
-    private EventoVial seleccionarEventoRelevante(List<EventoVial> aledanos,
-                                                  List<Arista> aristas, int desdeArista) {
+    static EventoVial seleccionarEventoRelevante(List<EventoVial> aledanos,
+                                                 List<Arista> aristas, int desdeArista,
+                                                 double lat, double lng) {
         if (aledanos.isEmpty()) return null;
 
         EventoVial mejorEnRuta = null;
         double mejorDistRuta = Double.MAX_VALUE;
 
         EventoVial mejorFuera = null;
-        double mejorDistEuclid = Double.MAX_VALUE;
+        double mejorDistFuera = Double.MAX_VALUE;
 
         for (EventoVial ev : aledanos) {
             double distRuta = GeoRuta.distanciaHastaTramo(aristas, desdeArista, ev.getTramoId());
             if (distRuta < Double.MAX_VALUE) {
-                if (distRuta < mejorDistRuta
+                if (mejorEnRuta == null
+                        || distRuta < mejorDistRuta
                         || (distRuta == mejorDistRuta
                             && ev.getGravedad() > mejorEnRuta.getGravedad())) {
                     mejorDistRuta = distRuta;
                     mejorEnRuta = ev;
                 }
             } else {
-                double dist = distEuclid(ev);
-                if (dist < mejorDistEuclid
-                        || (dist == mejorDistEuclid
-                            && mejorFuera != null
+                // Fuera de la ruta: distancia real (haversine) en metros a la geometría del evento
+                double dist = GeoRuta.distanciaAGeometriaM(lat, lng, ev.getGeom());
+                if (mejorFuera == null
+                        || dist < mejorDistFuera
+                        || (dist == mejorDistFuera
                             && ev.getGravedad() > mejorFuera.getGravedad())) {
-                    mejorDistEuclid = dist;
+                    mejorDistFuera = dist;
                     mejorFuera = ev;
                 }
             }
         }
         return mejorEnRuta != null ? mejorEnRuta : mejorFuera;
-    }
-
-    private double distEuclid(EventoVial ev) {
-        // Usamos el campo geom que ya está en memoria en el registro
-        var p = ev.getGeom();
-        return p != null ? 0.0 : Double.MAX_VALUE; // la distancia real la gestionó cercanos()
     }
 
     // =========================================================================
@@ -360,13 +414,13 @@ public class RecalculoService {
         GrafoEnMemoria grafo = grafoProvider.obtenerPorCategoria(
                 sesion.perfil().categoriaReglamentaria());
         if (grafo == null) {
-            return ResultadoAccion.sinRuta(estado, "El grafo no está disponible");
+            return ResultadoAccion.sinRuta("El grafo no está disponible");
         }
 
         // Snap de la posición actual al grafo
         int[] snapActual = grafo.nodoMasCercano(lat, lng);
         if (snapActual[1] > maxSnapM) {
-            return ResultadoAccion.sinRuta(estado,
+            return ResultadoAccion.sinRuta(
                     "La posición actual está fuera de cobertura");
         }
         int[] snapDestino = grafo.nodoMasCercano(latDestino, lngDestino);
@@ -374,7 +428,7 @@ public class RecalculoService {
         int idxDestino = snapDestino[0];
 
         if (idxOrigen == idxDestino) {
-            return ResultadoAccion.sinRuta(estado,
+            return ResultadoAccion.sinRuta(
                     "La posición actual coincide con el destino");
         }
 
@@ -384,22 +438,22 @@ public class RecalculoService {
             referencia = referenciaService.calcular(
                     sesion.perfil(), lat, lng, latDestino, lngDestino);
         } catch (SinCaminoException | MismoNodoException | PuntoFueraDeCoberturaException e) {
-            return ResultadoAccion.sinRuta(estado, e.getMessage());
+            return ResultadoAccion.sinRuta(e.getMessage());
         }
 
-        // Costo anterior (ruta restante)
-        Double costoAnterior = calcularCostoRestante(
-                sesion.aristasRuta(), sesion.estadoDesvio().indiceArista(),
-                sesion.perfil(), referencia, snapshot, usarCostoTiempo);
-
-        // Función de costo para el recálculo
+        // Función de costo del recálculo (preset vigente; SEGURA si la acción es 2).
+        // La MISMA función evalúa la ruta anterior, para que los costos sean comparables.
         FuncionCosto funcion = construirFuncion(
                 presetEfectivo, referencia, sesion, snapshot, usarCostoTiempo);
 
+        // Costo de la ruta anterior desde la posición actual (mismo tramo restante)
+        CostoRutaAnterior anterior = evaluarRutaAnterior(
+                sesion, grafo, funcion, idxOrigen, snapshot, lat, lng);
+
         // A* con heurística ShortPaper (o heurística trivial para TIEMPO)
         NodoInfo nDestino = grafo.nodo(idxDestino);
-        var heuristica = usarCostoTiempo
-                ? (tp20260054.eroutes.routing.algorithm.Heuristica) (lt, lg) -> 0.0
+        Heuristica heuristica = usarCostoTiempo
+                ? (lt, lg) -> 0.0
                 : HeuristicaMedible.crear(nDestino.lat(), nDestino.lng(),
                         sesion.perfil().velocidadMaximaKmh(),
                         referencia, presetProperties.de(presetEfectivo));
@@ -409,10 +463,9 @@ public class RecalculoService {
                 grafo, funcion, heuristica, idxOrigen, idxDestino, zona);
 
         if (!resultado.tieneCamino()) {
-            return ResultadoAccion.sinRuta(estado, mensajeSinAlternativa());
+            return ResultadoAccion.sinRuta(mensajeSinAlternativa(), anterior);
         }
 
-        NodoInfo nOrigen = grafo.nodo(idxOrigen);
         RutaDto rutaDto = rutaBuilder.construir(resultado, grafo, sesion.perfil(),
                 usarCostoTiempo ? "TIEMPO" : presetEfectivo.name(),
                 lat, lng, snapActual[1],
@@ -420,54 +473,113 @@ public class RecalculoService {
                 idxOrigen, idxDestino);
 
         double costoNuevo = resultado.costoTotal();
-        return ResultadoAccion.conRuta(estado, resultado.aristas(), rutaDto,
-                costoAnterior, costoNuevo);
+        double tiempoNuevoS = tiempoTotalS(resultado.aristas(), grafo);
+        return ResultadoAccion.conRuta(resultado.aristas(), rutaDto, anterior,
+                costoNuevo, tiempoNuevoS);
     }
 
     // =========================================================================
-    // Paso 5 — costo restante de la ruta anterior
+    // Paso 5 — costo de la ruta anterior (comparable con el de la ruta nueva)
     // =========================================================================
 
-    private Double calcularCostoRestante(List<Arista> aristas, int desdeArista,
-                                         tp20260054.eroutes.vehiculo.PerfilVehiculo perfil,
-                                         ReferenciaRuta referencia,
-                                         SnapshotEventos snapshot,
-                                         boolean usarCostoTiempo) {
-        if (aristas == null || desdeArista >= aristas.size()) return null;
+    /**
+     * Costo de la ruta anterior desde la posición actual, evaluado con la MISMA función de
+     * costo con la que se calcula la ruta nueva (incluidas las demoras por nodo) y sobre el
+     * mismo tramo restante: desde el nodo del grafo más cercano a la posición ({@code idxOrigen})
+     * hasta el destino.
+     *
+     * <ul>
+     *   <li>Si {@code idxOrigen} está sobre la ruta restante, se suman las aristas desde ese nodo.
+     *   <li>Si no (desvío), se añade el tramo de reconexión de menor costo desde la posición
+     *       hasta el final de la arista vigente, y se suma el resto de la ruta anterior.
+     *   <li>Si algún tramo restante está bloqueado, devuelve {@link CostoRutaAnterior#bloqueada()}.
+     * </ul>
+     *
+     * <p>El tiempo en segundos se calcula con la misma fórmula (CostoTiempo) para ambas rutas.
+     */
+    private CostoRutaAnterior evaluarRutaAnterior(SesionNavegacion sesion, GrafoEnMemoria grafo,
+                                                  FuncionCosto funcion, int idxOrigen,
+                                                  SnapshotEventos snapshot,
+                                                  double lat, double lng) {
+        List<Arista> aristas = sesion.aristasRuta();
+        int desde = sesion.estadoDesvio().indiceArista();
+        if (aristas == null || desde < 0 || desde >= aristas.size()) {
+            return CostoRutaAnterior.NO_DISPONIBLE;
+        }
 
-        // Verificar si la ruta restante tiene algún tramo bloqueado
-        for (int i = desdeArista; i < aristas.size(); i++) {
+        // Ruta anterior bloqueada: sin costo comparable (costo_anterior = NULL)
+        for (int i = desde; i < aristas.size(); i++) {
             if (snapshot.estaBloqueado(aristas.get(i).tramoId())) {
-                return null; // ruta anterior bloqueada → costo_anterior = NULL
+                return CostoRutaAnterior.BLOQUEADA;
             }
         }
 
-        FuncionCosto f = usarCostoTiempo
-                ? costoTiempo
-                : costoPresetFactory.crear(
-                        presetProperties.de(Preset.RAPIDA), // placeholder; se sustituye abajo
-                        referencia, perfil, snapshot);
-        // Si no es TIEMPO necesitamos el preset real de la sesión; pero calcularCostoRestante
-        // no recibe el preset. Para el cálculo de costo_anterior usamos el mismo costo preset
-        // que se usó para decidir. El caller pasa 'usarCostoTiempo=false' con el preset vigente,
-        // pero CostoPreset necesita los pesos. Simplificación: siempre calculamos con TIEMPO.
-        // Esto es suficiente para la etiqueta 'innecesario'; el comparador usa mejora relativa.
-        f = costoTiempo;
+        // ¿El nodo de la posición actual está sobre la ruta restante?
+        int nodo = nodoInicioArista(grafo, aristas, desde);
+        int posicion = -1;
+        for (int i = desde; i <= aristas.size(); i++) {
+            if (nodo == idxOrigen) { posicion = i; break; }
+            if (i < aristas.size()) nodo = aristas.get(i).destino();
+        }
 
         double costo = 0.0;
-        GrafoEnMemoria grafo = grafoProvider.obtenerPorCategoria(
-                perfil.categoriaReglamentaria());
-        if (grafo == null) return null;
-
-        for (int i = desdeArista; i < aristas.size(); i++) {
-            Arista a = aristas.get(i);
-            var ctx = new tp20260054.eroutes.routing.costo.ContextoNodo(
-                    grafo.nodo(a.destino()));
-            double c = f.costo(a, ctx);
-            if (!Double.isFinite(c)) return null; // bloqueada
-            costo += c;
+        double tiempoS = 0.0;
+        int primeraArista;
+        if (posicion >= 0) {
+            primeraArista = posicion;
+        } else {
+            // Desvío: reconectar con la ruta anterior al final de la arista vigente
+            int nodoReconexion = aristas.get(desde).destino();
+            NodoInfo nr = grafo.nodo(nodoReconexion);
+            Zona zonaPuente = Zona.alrededor(lat, lng, nr.lat(), nr.lng(), margenZonaM);
+            ResultadoDijkstra puente = AStar.calcular(
+                    grafo, funcion, (lt, lg) -> 0.0, idxOrigen, nodoReconexion, zonaPuente);
+            if (!puente.tieneCamino()) {
+                return CostoRutaAnterior.NO_DISPONIBLE;
+            }
+            costo += puente.costoTotal();
+            tiempoS += tiempoTotalS(puente.aristas(), grafo);
+            primeraArista = desde + 1;
         }
-        return costo;
+
+        for (int i = primeraArista; i < aristas.size(); i++) {
+            Arista a = aristas.get(i);
+            var ctx = new ContextoNodo(grafo.nodo(a.destino()));
+            double c = funcion.costo(a, ctx);
+            if (!Double.isFinite(c)) return CostoRutaAnterior.BLOQUEADA;
+            costo += c;
+            tiempoS += costoTiempo.costo(a, ctx);
+        }
+        return new CostoRutaAnterior(costo, tiempoS, false);
+    }
+
+    /** Nodo (índice del grafo) donde empieza la arista {@code i} de la ruta; -1 si no se puede determinar. */
+    private static int nodoInicioArista(GrafoEnMemoria grafo, List<Arista> aristas, int i) {
+        if (i > 0) return aristas.get(i - 1).destino();
+        double[][] geom = aristas.get(0).geom();
+        if (geom == null || geom.length == 0) return -1;
+        return grafo.nodoMasCercano(geom[0][0], geom[0][1])[0];
+    }
+
+    /** Tiempo total (s) de un conjunto de aristas con la fórmula de {@link CostoTiempo} (incluye demoras por nodo). */
+    private double tiempoTotalS(List<Arista> aristas, GrafoEnMemoria grafo) {
+        double total = 0.0;
+        for (Arista a : aristas) {
+            total += costoTiempo.costo(a, new ContextoNodo(grafo.nodo(a.destino())));
+        }
+        return total;
+    }
+
+    /**
+     * Costo de la ruta anterior desde la posición actual.
+     *
+     * @param costo     costo con la función del recálculo; null si no hay valor comparable
+     * @param tiempoS   tiempo en segundos con la fórmula de CostoTiempo; null si no hay valor
+     * @param bloqueada true si la ruta restante tiene un tramo bloqueado
+     */
+    private record CostoRutaAnterior(Double costo, Double tiempoS, boolean bloqueada) {
+        static final CostoRutaAnterior NO_DISPONIBLE = new CostoRutaAnterior(null, null, false);
+        static final CostoRutaAnterior BLOQUEADA = new CostoRutaAnterior(null, null, true);
     }
 
     private FuncionCosto construirFuncion(Preset preset, ReferenciaRuta referencia,
@@ -502,10 +614,12 @@ public class RecalculoService {
         r.setUsoRespaldo(decision.usoRespaldo());
         r.setMotivoRespaldo(decision.motivoRespaldo() != null
                 ? decision.motivoRespaldo().name() : null);
-        r.setRutaAnteriorBloqueada(resultado.costoAnterior() == null
-                && decision.accion() != Accion.MANTENER);
+        r.setRutaAnteriorBloqueada(decision.accion() != Accion.MANTENER
+                && resultado.rutaAnteriorBloqueada());
         r.setCostoAnterior(resultado.costoAnterior());
         r.setCostoNuevo(resultado.costoNuevo());
+        r.setCostoAnteriorTiempoS(resultado.costoAnteriorTiempoS());
+        r.setCostoNuevoTiempoS(resultado.costoNuevoTiempoS());
         r.setInnecesario(calcularInnecesario(decision.accion(), estado, resultado));
         r.setExito(resultado.exito());
         r.setMensaje(resultado.mensaje());
@@ -578,22 +692,32 @@ public class RecalculoService {
     public record ResultadoAccion(
             List<Arista> nuevaRuta,     // null si no hubo recálculo exitoso
             RutaDto rutaDto,            // null si no hubo recálculo exitoso
-            Double costoAnterior,
+            Double costoAnterior,       // misma función de costo que costoNuevo; null si bloqueada/no disponible
             Double costoNuevo,
+            Double costoAnteriorTiempoS, // misma fórmula de tiempo para ambas rutas
+            Double costoNuevoTiempoS,
+            boolean rutaAnteriorBloqueada,
             boolean exito,
             String mensaje) {
 
         static ResultadoAccion mantener(EstadoRecalculo e) {
-            return new ResultadoAccion(null, null, null, null, true, null);
+            return new ResultadoAccion(null, null, null, null, null, null, false, true, null);
         }
 
-        static ResultadoAccion sinRuta(EstadoRecalculo e, String msg) {
-            return new ResultadoAccion(null, null, null, null, false, msg);
+        static ResultadoAccion sinRuta(String msg) {
+            return new ResultadoAccion(null, null, null, null, null, null, false, false, msg);
         }
 
-        static ResultadoAccion conRuta(EstadoRecalculo e, List<Arista> aristas,
-                                       RutaDto dto, Double costoAnt, double costoNuevo) {
-            return new ResultadoAccion(aristas, dto, costoAnt, costoNuevo, true, null);
+        private static ResultadoAccion sinRuta(String msg, CostoRutaAnterior ant) {
+            return new ResultadoAccion(null, null, ant.costo(), null, ant.tiempoS(), null,
+                    ant.bloqueada(), false, msg);
+        }
+
+        private static ResultadoAccion conRuta(List<Arista> aristas, RutaDto dto,
+                                               CostoRutaAnterior ant,
+                                               double costoNuevo, double tiempoNuevoS) {
+            return new ResultadoAccion(aristas, dto, ant.costo(), costoNuevo,
+                    ant.tiempoS(), tiempoNuevoS, ant.bloqueada(), true, null);
         }
     }
 

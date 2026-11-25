@@ -267,7 +267,7 @@ class NavegacionControllerTest {
     @Test
     void recalculoManual_exitoso_200() throws Exception {
         when(navService.recalcularManual(anyLong(), anyLong(),
-                anyDouble(), anyDouble()))
+                anyDouble(), anyDouble(), anyDouble()))
                 .thenReturn(new RecalculoManualDto(true, null, rutaFake()));
 
         mockMvc.perform(post("/api/v1/navigations/1/recalculations")
@@ -282,7 +282,7 @@ class NavegacionControllerTest {
     @Test
     void recalculoManual_sesionAjena_404() throws Exception {
         when(navService.recalcularManual(anyLong(), anyLong(),
-                anyDouble(), anyDouble()))
+                anyDouble(), anyDouble(), anyDouble()))
                 .thenThrow(new NavegacionNoEncontradaException("No encontrada"));
 
         mockMvc.perform(post("/api/v1/navigations/1/recalculations")
@@ -295,7 +295,7 @@ class NavegacionControllerTest {
     @Test
     void recalculoManual_sinRuta_200_exitoFalse() throws Exception {
         when(navService.recalcularManual(anyLong(), anyLong(),
-                anyDouble(), anyDouble()))
+                anyDouble(), anyDouble(), anyDouble()))
                 .thenReturn(new RecalculoManualDto(false, "Sin alternativa", null));
 
         mockMvc.perform(post("/api/v1/navigations/1/recalculations")

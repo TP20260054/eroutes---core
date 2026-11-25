@@ -23,8 +23,8 @@ import org.locationtech.jts.geom.Point;
  * igual que {@code tramos.nodo_origen/nodo_destino}. {@code pesosUsados} se almacena
  * como JSONB usando {@link JsonNode} (mapeo JSON de Hibernate, sin doble codificación).
  *
- * <p>Retención OB2 9.1: {@code origen} y {@code destino} se conservan hasta 30 días
- * tras el cierre del OE4; la purga no se implementa aquí.
+ * <p>Retención OB2 9.1: {@code origen} y {@code destino} se ponen en NULL pasados
+ * {@code eroutes.navegacion.retencion-dias} días ({@link PurgaNavegaciones}).
  */
 @Getter
 @Setter
@@ -44,10 +44,12 @@ public class Navegacion {
     @Column(name = "vehiculo_id", nullable = false)
     private Long vehiculoId;
 
-    @Column(columnDefinition = "geometry(Point,4326)", nullable = false)
+    /** NULL tras la purga de retención (OB2 9.1, ver {@link PurgaNavegaciones}). */
+    @Column(columnDefinition = "geometry(Point,4326)")
     private Point origen;
 
-    @Column(columnDefinition = "geometry(Point,4326)", nullable = false)
+    /** NULL tras la purga de retención (OB2 9.1, ver {@link PurgaNavegaciones}). */
+    @Column(columnDefinition = "geometry(Point,4326)")
     private Point destino;
 
     @Enumerated(EnumType.STRING)
