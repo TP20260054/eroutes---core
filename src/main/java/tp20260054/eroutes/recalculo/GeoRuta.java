@@ -1,6 +1,8 @@
 package tp20260054.eroutes.recalculo;
 
 import java.util.List;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
 import tp20260054.eroutes.routing.graph.Arista;
 import tp20260054.eroutes.routing.graph.GrafoEnMemoria;
 
@@ -156,6 +158,26 @@ public final class GeoRuta {
         double px = ax + t * dx;
         double py = ay + t * dy;
         return Math.sqrt(px * px + py * py);
+    }
+
+    // -------------------------------------------------------------------------
+    // Distancia a una geometría
+    // -------------------------------------------------------------------------
+
+    /**
+     * Distancia en metros (haversine) desde (lat, lng) al punto más cercano de la
+     * geometría: el vértice más cercano; para un {@code Point} es el propio punto.
+     * Las coordenadas JTS son {@code x = lng}, {@code y = lat}.
+     *
+     * @return la distancia, o {@link Double#MAX_VALUE} si la geometría es nula o vacía
+     */
+    public static double distanciaAGeometriaM(double lat, double lng, Geometry geom) {
+        if (geom == null || geom.isEmpty()) return Double.MAX_VALUE;
+        double mejor = Double.MAX_VALUE;
+        for (Coordinate c : geom.getCoordinates()) {
+            mejor = Math.min(mejor, GrafoEnMemoria.haversine(lat, lng, c.y, c.x));
+        }
+        return mejor;
     }
 
     /** Resultado de la proyección más cercana sobre la polilínea. */

@@ -47,8 +47,8 @@ public class EventoVialController {
     @Operation(summary = "Resolver un evento vial")
     public void resolver(@AuthenticationPrincipal Jwt jwt,
                          @PathVariable Long id) {
-        // Cualquier usuario autenticado puede resolver (moderación queda fuera de alcance)
-        service.resolver(id);
+        // Solo el autor del evento puede resolverlo (404 para los demás)
+        service.resolver(Long.parseLong(jwt.getSubject()), id);
     }
 
     private EventoVialDto toDto(EventoVial ev) {

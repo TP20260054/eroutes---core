@@ -36,7 +36,7 @@ class RegistroEventosActivosTest {
 
         props = new EventoVialProperties(
                 120, 50.0, List.of("BLOQUEO_TOTAL"), 30,
-                new EventoVialProperties.Gravedad(1.0, 0.75, 0.5, 0.25));
+                new EventoVialProperties.Gravedad(1.0, 0.75, 0.5, 0.25), 5);
 
         registro = new RegistroEventosActivosImpl(repo, props);
         registro.cargarAlArrancar();

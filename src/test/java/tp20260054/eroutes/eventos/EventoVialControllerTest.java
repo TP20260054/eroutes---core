@@ -126,7 +126,7 @@ class EventoVialControllerTest {
     @Test
     void resolver_eventoNoEncontrado_devuelve404() throws Exception {
         doThrow(new RecursoNoEncontradoException("Evento no encontrado: 99"))
-                .when(service).resolver(99L);
+                .when(service).resolver(1L, 99L);
 
         mockMvc.perform(post("/api/v1/events/99/resolve")
                         .with(jwt().jwt(j -> j.subject("1"))))
@@ -134,9 +134,36 @@ class EventoVialControllerTest {
     }
 
     @Test
+    void resolver_eventoDeOtroUsuario_devuelve404() throws Exception {
+        // El servicio responde 404 cuando el usuario del JWT (2) no es el autor del evento
+        doThrow(new RecursoNoEncontradoException("Evento no encontrado: 5"))
+                .when(service).resolver(2L, 5L);
+
+        mockMvc.perform(post("/api/v1/events/5/resolve")
+                        .with(jwt().jwt(j -> j.subject("2"))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void crearEvento_limiteDeActivos_devuelve409() throws Exception {
+        when(service.crear(anyLong(), any(Double.class), any(Double.class), any(), any()))
+                .thenThrow(new LimiteEventosActivosException("máximo 5"));
+
+        mockMvc.perform(post("/api/v1/events")
+                        .with(jwt().jwt(j -> j.subject("1")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"punto":{"lat":-12.09,"lng":-77.04},"tipo":"OBRA"}
+                                """))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     void resolver_valido_devuelve204() throws Exception {
         mockMvc.perform(post("/api/v1/events/1/resolve")
                         .with(jwt().jwt(j -> j.subject("1"))))
                 .andExpect(status().isNoContent());
+        // El controlador pasa el usuario del JWT al servicio (solo el autor puede resolver)
+        org.mockito.Mockito.verify(service).resolver(1L, 1L);
     }
 }
